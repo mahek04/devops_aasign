@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   menu:
+    image: asia-south1-docker.pkg.dev/assignment-476718/orders-repo/menu:latest
     build:
       context: ./menu
       dockerfile: Dockerfile
@@ -17,6 +18,7 @@ services:
     restart: unless-stopped
 
   order:
+    image: asia-south1-docker.pkg.dev/assignment-476718/orders-repo/order:latest
     build:
       context: ./order
       dockerfile: Dockerfile
@@ -35,6 +37,7 @@ services:
     restart: unless-stopped
 
   viewer:
+    image: asia-south1-docker.pkg.dev/assignment-476718/orders-repo/viewer:latest
     build:
       context: ./viewer
       dockerfile: Dockerfile
@@ -50,6 +53,7 @@ services:
     restart: unless-stopped
 
   admin:
+    image: asia-south1-docker.pkg.dev/assignment-476718/orders-repo/admin:latest
     build:
       context: ./admin
       dockerfile: Dockerfile
