@@ -1,0 +1,36 @@
+name: Build and Push Images to Artifact Registry
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GOOGLE_CREDENTIALS }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+
+      - name: Build and push Docker images
+        run: |
+          docker build -t asia-south1-docker.pkg.dev/assignment-476718/orders-repo/menu:latest ./menu
+          docker push asia-south1-docker.pkg.dev/assignment-476718/orders-repo/menu:latest
+
+          docker build -t asia-south1-docker.pkg.dev/assignment-476718/orders-repo/order:latest ./order
+          docker push asia-south1-docker.pkg.dev/assignment-476718/orders-repo/order:latest
+
+          docker build -t asia-south1-docker.pkg.dev/assignment-476718/orders-repo/admin:latest ./admin
+          docker push asia-south1-docker.pkg.dev/assignment-476718/orders-repo/admin:latest
+
+          docker build -t asia-south1-docker.pkg.dev/assignment-476718/orders-repo/viewer:latest ./viewer
+          docker push asia-south1-docker.pkg.dev/assignment-476718/orders-repo/viewer:latest
