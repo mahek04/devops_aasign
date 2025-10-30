@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  menu:
+    build:
+      context: ./menu
+      dockerfile: Dockerfile
+    container_name: menu-service
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URL=sqlite:///menu.db
+    volumes:
+      - ./menu/instance:/app/instance
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  order:
+    build:
+      context: ./order
+      dockerfile: Dockerfile
+    container_name: order-service
+    ports:
+      - "5001:5001"
+    environment:
+      - DATABASE_URL=sqlite:///orders.db
+      - MENU_SERVICE_URL=http://menu:5000
+    volumes:
+      - ./order/instance:/app/instance
+    networks:
+      - app-network
+    depends_on:
+      - menu
+    restart: unless-stopped
+
+  viewer:
+    build:
+      context: ./viewer
+      dockerfile: Dockerfile
+    container_name: viewer-service
+    ports:
+      - "5002:5002"
+    environment:
+      - ORDER_SERVICE_URL=http://order:5001
+    networks:
+      - app-network
+    depends_on:
+      - order
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    container_name: admin-service
+    ports:
+      - "5003:5003"
+    environment:
+      - MENU_SERVICE_URL=http://menu:5000
+    networks:
+      - app-network
+    depends_on:
+      - menu
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
+

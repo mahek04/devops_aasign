@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Add Menu Items</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;padding:20px}
+    .container{max-width:720px;margin:0 auto}
+    h1{color:#fff;text-align:center;margin-bottom:20px;text-shadow:2px 2px 4px rgba(0,0,0,.25)}
+    .card{background:#fff;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,.15);padding:20px}
+    .field{margin:10px 0}
+    label{display:block;margin-bottom:6px;color:#333;font-weight:600}
+    input,textarea,select{width:100%;padding:10px;border:2px solid #e0e0e0;border-radius:8px;font-family:inherit}
+    input:focus,textarea:focus,select:focus{outline:none;border-color:#667eea}
+    .actions{margin-top:14px;display:flex;gap:10px}
+    .btn{background:#667eea;color:#fff;border:none;padding:10px 16px;border-radius:8px;cursor:pointer}
+    .btn:hover{background:#5568d3}
+    .msg{margin-top:12px;padding:10px;border-radius:8px;display:none}
+    .ok{background:#e8fff3;color:#0a7c3b;border:1px solid #c3f5d5}
+    .err{background:#fff2f2;color:#b00020;border:1px solid #f5c2c2}
+    .list{margin-top:20px}
+    .item{display:flex;justify-content:space-between;background:#f8f9fa;border-radius:10px;padding:10px;margin:6px 0}
+    .price{color:#667eea;font-weight:700}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>➕ Add Menu Items</h1>
+    <div class="card">
+      <div class="field">
+        <label for="name">Name *</label>
+        <input id="name" placeholder="e.g., Chicken Biryani" />
+      </div>
+      <div class="field">
+        <label for="desc">Description</label>
+        <textarea id="desc" rows="3" placeholder="Optional description..."></textarea>
+      </div>
+      <div class="field">
+        <label for="price">Price (₹) *</label>
+        <input id="price" type="number" step="0.01" min="0" />
+      </div>
+      <div class="field">
+        <label for="cat">Category</label>
+        <select id="cat">
+          <option value="">Select</option>
+          <option>Appetizer</option>
+          <option>Main Course</option>
+          <option>Dessert</option>
+          <option>Beverage</option>
+          <option>Snacks</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div class="actions">
+        <button class="btn" onclick="addItem()">Add Item</button>
+        <button class="btn" onclick="loadMenu()">Refresh Menu</button>
+      </div>
+      <div id="msgOk" class="msg ok"></div>
+      <div id="msgErr" class="msg err"></div>
+    </div>
+
+    <div class="card list" id="menuList">
+      Loading menu...
+    </div>
+  </div>
+
+  <script>
+    async function addItem(){
+      hideMsgs();
+      const name = document.getElementById('name').value.trim();
+      const description = document.getElementById('desc').value.trim();
+      const price = parseFloat(document.getElementById('price').value);
+      const category = document.getElementById('cat').value;
+      if(!name || isNaN(price) || price <= 0){
+        showErr('Please provide valid name and price.');
+        return;
+      }
+      try{
+        const resp = await fetch('/api/menu',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ name, description, price, category })
+        });
+        if(!resp.ok){
+          const e = await resp.json();
+          throw new Error(e.error || 'Failed to add item');
+        }
+        const item = await resp.json();
+        showOk(`Added: ${item.name} (₹${item.price.toFixed(2)})`);
+        document.getElementById('name').value = '';
+        document.getElementById('desc').value = '';
+        document.getElementById('price').value = '';
+        document.getElementById('cat').value = '';
+        loadMenu();
+      }catch(err){
+        showErr(err.message);
+      }
+    }
+
+    async function loadMenu(){
+      const list = document.getElementById('menuList');
+      list.textContent = 'Loading menu...';
+      try{
+        const resp = await fetch('/api/menu');
+        if(!resp.ok) throw new Error('Failed to load menu');
+        const items = await resp.json();
+        if(!items.length){
+          list.textContent = 'No items yet.';
+          return;
+        }
+        list.innerHTML = items.map(i => `
+          <div class="item">
+            <div>
+              <div><strong>${i.name}</strong> ${i.category?`<span class="price" style="margin-left:8px">${i.category}</span>`:''}</div>
+              <div style="color:#666">${i.description||''}</div>
+            </div>
+            <div class="price">₹${Number(i.price).toFixed(2)}</div>
+          </div>
+        `).join('');
+      }catch(err){
+        list.textContent = 'Error loading menu';
+      }
+    }
+
+    function hideMsgs(){
+      document.getElementById('msgOk').style.display='none';
+      document.getElementById('msgErr').style.display='none';
+    }
+    function showOk(t){
+      const el = document.getElementById('msgOk');
+      el.textContent = t; el.style.display='block';
+    }
+    function showErr(t){
+      const el = document.getElementById('msgErr');
+      el.textContent = t; el.style.display='block';
+    }
+
+    window.addEventListener('DOMContentLoaded', loadMenu);
+  </script>
+</body>
+</html>
+
+

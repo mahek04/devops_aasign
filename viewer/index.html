@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Previous Orders</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;padding:20px;color:#333}
+    .container{max-width:1200px;margin:0 auto}
+    h1{color:#fff;text-align:center;margin-bottom:20px;text-shadow:2px 2px 4px rgba(0,0,0,0.25)}
+    .toolbar{display:flex;gap:10px;justify-content:center;align-items:center;margin-bottom:20px}
+    .btn{background:#667eea;color:#fff;border:none;padding:10px 16px;border-radius:8px;cursor:pointer}
+    .btn:hover{background:#5568d3}
+    .orders{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+    .card{background:#fff;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,.15);padding:16px}
+    .card h3{margin-bottom:8px}
+    .row{display:flex;justify-content:space-between;margin:6px 0}
+    .badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#f0f0f0;font-size:.85em}
+    .items{margin-top:10px;border-top:1px solid #eee;padding-top:10px}
+    .item{display:flex;justify-content:space-between;margin:4px 0;color:#555}
+    .muted{color:#777}
+    .error{background:#fff2f2;color:#d00;border:1px solid #f5c2c2;padding:12px;border-radius:8px;text-align:center}
+    .empty{color:#fff;text-align:center;margin-top:40px}
+    .search{padding:8px 12px;border-radius:8px;border:1px solid #ddd;min-width:260px}
+  </style>
+  </head>
+<body>
+  <div class="container">
+    <h1>📜 Previous Orders</h1>
+    <div class="toolbar">
+      <input id="search" class="search" placeholder="Search by customer name..." />
+      <button class="btn" onclick="loadOrders()">Refresh</button>
+    </div>
+    <div id="content"></div>
+  </div>
+
+  <script>
+    let allOrders = [];
+
+    async function loadOrders(){
+      const content = document.getElementById('content');
+      content.innerHTML = '<div class="empty">Loading...</div>';
+      try{
+        const resp = await fetch('/api/orders');
+        if(!resp.ok) throw new Error('Failed to fetch orders');
+        allOrders = await resp.json();
+        renderOrders(allOrders);
+      }catch(err){
+        content.innerHTML = `<div class="error">${err.message}</div>`;
+      }
+    }
+
+    function renderOrders(orders){
+      const content = document.getElementById('content');
+      if(!orders.length){
+        content.innerHTML = '<div class="empty">No orders found.</div>';
+        return;
+      }
+      content.innerHTML = `<div class="orders">${orders.map(o => orderCard(o)).join('')}</div>`;
+    }
+
+    function orderCard(o){
+      const date = new Date(o.created_at);
+      const total = (o.total_amount || 0).toFixed(2);
+      return `
+        <div class=\"card\">\n\
+          <div class=\"row\"><h3>Order #${o.id}</h3><span class=\"badge\">${o.status||'Pending'}</span></div>\n\
+          <div class=\"row\"><span class=\"muted\">Customer</span><span>${o.customer_name}</span></div>\n\
+          <div class=\"row\"><span class=\"muted\">Phone</span><span>${o.customer_phone||'-'}</span></div>\n\
+          <div class=\"row\"><span class=\"muted\">Address</span><span>${o.customer_address||'-'}</span></div>\n\
+          <div class=\"row\"><span class=\"muted\">Date</span><span>${date.toLocaleString()}</span></div>\n\
+          <div class=\"row\"><strong>Total</strong><strong>₹${total}</strong></div>\n\
+          <div class=\"items\">\n\
+            ${(o.items||[]).map(it => `<div class=\"item\"><span>${it.menu_item_name} x${it.quantity}</span><span>₹${(it.price*it.quantity).toFixed(2)}</span></div>`).join('')}\n\
+          </div>\n\
+        </div>`;
+    }
+
+    document.getElementById('search').addEventListener('input', (e)=>{
+      const q = e.target.value.toLowerCase();
+      const filtered = allOrders.filter(o => (o.customer_name||'').toLowerCase().includes(q));
+      renderOrders(filtered);
+    });
+
+    window.addEventListener('DOMContentLoaded', loadOrders);
+  </script>
+</body>
+</html>
+
+

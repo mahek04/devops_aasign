@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menu Items</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .menu-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 25px;
+            margin-top: 20px;
+        }
+
+        .menu-item {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            cursor: pointer;
+        }
+
+        .menu-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.3);
+        }
+
+        .menu-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+
+        .menu-item-name {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+            flex: 1;
+        }
+
+        .menu-item-price {
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #667eea;
+            margin-left: 10px;
+        }
+
+        .menu-item-category {
+            display: inline-block;
+            padding: 5px 15px;
+            background: #f0f0f0;
+            border-radius: 20px;
+            font-size: 0.85em;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .menu-item-description {
+            color: #666;
+            line-height: 1.6;
+            margin-top: 10px;
+        }
+
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.5em;
+            margin-top: 50px;
+        }
+
+        .error {
+            text-align: center;
+            color: #ff6b6b;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 50px;
+        }
+
+        .no-items {
+            text-align: center;
+            color: white;
+            font-size: 1.2em;
+            background: rgba(255,255,255,0.2);
+            padding: 30px;
+            border-radius: 10px;
+            margin-top: 50px;
+        }
+
+        .category-filter {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .filter-btn {
+            background: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+        }
+
+        .filter-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .filter-btn.active {
+            background: #667eea;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍽️ Our Menu</h1>
+        
+        <div class="category-filter" id="categoryFilter">
+            <!-- Category buttons will be inserted here -->
+        </div>
+
+        <div id="menuContainer">
+            <div class="loading">Loading menu items...</div>
+        </div>
+    </div>
+
+    <script>
+        let allMenuItems = [];
+        let currentFilter = 'All';
+
+        // Fetch menu items from the API
+        async function fetchMenuItems() {
+            try {
+                const response = await fetch('/api/menu');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch menu items');
+                }
+                const data = await response.json();
+                allMenuItems = data;
+                displayCategoryFilters();
+                displayMenuItems(allMenuItems);
+            } catch (error) {
+                console.error('Error fetching menu items:', error);
+                document.getElementById('menuContainer').innerHTML = `
+                    <div class="error">
+                        <h2>Error Loading Menu</h2>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Display category filter buttons
+        function displayCategoryFilters() {
+            const categories = ['All', ...new Set(allMenuItems.map(item => item.category).filter(cat => cat))];
+            const filterContainer = document.getElementById('categoryFilter');
+            
+            filterContainer.innerHTML = categories.map(category => `
+                <button class="filter-btn ${category === currentFilter ? 'active' : ''}" 
+                        onclick="filterByCategory('${category}')">
+                    ${category}
+                </button>
+            `).join('');
+        }
+
+        // Filter items by category
+        function filterByCategory(category) {
+            currentFilter = category;
+            const filteredItems = category === 'All' 
+                ? allMenuItems 
+                : allMenuItems.filter(item => item.category === category);
+            
+            displayCategoryFilters();
+            displayMenuItems(filteredItems);
+        }
+
+        // Display menu items
+        function displayMenuItems(items) {
+            const container = document.getElementById('menuContainer');
+            
+            if (items.length === 0) {
+                container.innerHTML = `
+                    <div class="no-items">
+                        <p>No menu items found.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="menu-grid">
+                    ${items.map(item => `
+                        <div class="menu-item">
+                            ${item.category ? `<div class="menu-item-category">${item.category}</div>` : ''}
+                            <div class="menu-item-header">
+                                <div class="menu-item-name">${item.name}</div>
+                                <div class="menu-item-price">₹${item.price.toFixed(2)}</div>
+                            </div>
+                            ${item.description ? `<div class="menu-item-description">${item.description}</div>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        // Load menu items when page loads
+        window.addEventListener('DOMContentLoaded', fetchMenuItems);
+    </script>
+</body>
+</html>
+
