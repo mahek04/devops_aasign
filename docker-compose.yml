@@ -1,74 +1,361 @@
 version: '3.8'
 
+# Global networks
+networks:
+  smart-restaurant-network:
+    driver: bridge
+
+# Volumes for data persistence
+volumes:
+  mysql-data:
+  postgres-data:
+  mongodb-data:
+  redis-data:
+  kong-db-data:
+  konga-db-data:
+
 services:
-  menu:
-    image: asia-south1-docker.pkg.dev/assignment-476718/orders-repo/menu:latest
+  # ============================================
+  # DATABASES
+  # ============================================
+  
+  # MySQL for Menu Service
+  menu-mysql:
+    image: mysql:8.0
+    container_name: menu-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: menudb
+      MYSQL_USER: menuuser
+      MYSQL_PASSWORD: menupass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - smart-restaurant-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-ppassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # PostgreSQL for Order Service
+  order-postgres:
+    image: postgres:15
+    container_name: order-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: orderdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - smart-restaurant-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # MongoDB for Billing Service
+  billing-mongodb:
+    image: mongo:7.0
+    container_name: billing-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: billingdb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - smart-restaurant-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis for Feedback Service
+  feedback-redis:
+    image: redis:7-alpine
+    container_name: feedback-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - smart-restaurant-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+  # ============================================
+  # MICROSERVICES
+  # ============================================
+
+  # Menu Service (Java Spring Boot)
+  menu-service:
     build:
-      context: ./menu
+      context: ./menu-service
       dockerfile: Dockerfile
     container_name: menu-service
-    ports:
-      - "5000:5000"
     environment:
-      - DATABASE_URL=sqlite:///menu.db
-    volumes:
-      - ./menu/instance:/app/instance
+      DB_HOST: menu-mysql
+      DB_PORT: 3306
+      DB_NAME: menudb
+      DB_USER: root
+      DB_PASSWORD: password
+      SERVER_PORT: 8080
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8080:8080"
     networks:
-      - app-network
+      - smart-restaurant-network
+    depends_on:
+      menu-mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
 
-  order:
-    image: asia-south1-docker.pkg.dev/assignment-476718/orders-repo/order:latest
+  # Order Service (Python FastAPI)
+  order-service:
     build:
-      context: ./order
+      context: ./order-service
       dockerfile: Dockerfile
     container_name: order-service
-    ports:
-      - "5001:5001"
     environment:
-      - DATABASE_URL=sqlite:///orders.db
-      - MENU_SERVICE_URL=http://menu:5000
+      DATABASE_URL: postgresql+asyncpg://postgres:password@order-postgres:5432/orderdb
+      MENU_SERVICE_URL: http://menu-service:8080
+      PORT: 8000
+      DEBUG: "False"
+    ports:
+      - "8000:8000"
+    networks:
+      - smart-restaurant-network
+    depends_on:
+      order-postgres:
+        condition: service_healthy
+      menu-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import requests; requests.get(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Billing Service (Node.js Express)
+  billing-service:
+    build:
+      context: ./billing-service
+      dockerfile: Dockerfile
+    container_name: billing-service
+    environment:
+      MONGODB_URI: mongodb://admin:password@billing-mongodb:27017/billingdb?authSource=admin
+      ORDER_SERVICE_URL: http://order-service:8000
+      MENU_SERVICE_URL: http://menu-service:8080
+      PORT: 3000
+      NODE_ENV: production
+      TAX_RATE: 0.08
+      SERVICE_CHARGE: 0
+    ports:
+      - "3000:3000"
+    networks:
+      - smart-restaurant-network
+    depends_on:
+      billing-mongodb:
+        condition: service_healthy
+      order-service:
+        condition: service_started
+      menu-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Feedback Service (Go)
+  feedback-service:
+    build:
+      context: ./feedback-service
+      dockerfile: Dockerfile
+    container_name: feedback-service
+    environment:
+      REDIS_URL: feedback-redis:6379
+      REDIS_PASSWORD: ""
+      PORT: 8081
+      GIN_MODE: release
+    ports:
+      - "8081:8081"
+    networks:
+      - smart-restaurant-network
+    depends_on:
+      feedback-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # ============================================
+  # KONG API GATEWAY
+  # ============================================
+
+  # Kong Database
+  kong-database:
+    image: postgres:15
+    container_name: kong-database
+    environment:
+      POSTGRES_DB: kong
+      POSTGRES_USER: kong
+      POSTGRES_PASSWORD: kongpass
+    networks:
+      - smart-restaurant-network
     volumes:
-      - ./order/instance:/app/instance
-    networks:
-      - app-network
-    depends_on:
-      - menu
+      - kong-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kong"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
-  viewer:
-    image: asia-south1-docker.pkg.dev/assignment-476718/orders-repo/viewer:latest
-    build:
-      context: ./viewer
-      dockerfile: Dockerfile
-    container_name: viewer-service
-    ports:
-      - "5002:5002"
+  # Kong Migration
+  kong-migration:
+    image: kong:3.4
+    container_name: kong-migration
+    command: kong migrations bootstrap
     environment:
-      - ORDER_SERVICE_URL=http://order:5001
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-database
+      KONG_PG_DATABASE: kong
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kongpass
     networks:
-      - app-network
+      - smart-restaurant-network
     depends_on:
-      - order
-    restart: unless-stopped
+      kong-database:
+        condition: service_healthy
+    restart: on-failure
 
-  admin:
-    image: asia-south1-docker.pkg.dev/assignment-476718/orders-repo/admin:latest
-    build:
-      context: ./admin
-      dockerfile: Dockerfile
-    container_name: admin-service
-    ports:
-      - "5003:5003"
+  # Kong Gateway
+  kong:
+    image: kong:3.4
+    container_name: kong-gateway
     environment:
-      - MENU_SERVICE_URL=http://menu:5000
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-database
+      KONG_PG_DATABASE: kong
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kongpass
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_ADMIN_GUI_URL: http://localhost:8002
+      KONG_PROXY_LISTEN: 0.0.0.0:8000, 0.0.0.0:8443 ssl
     networks:
-      - app-network
+      - smart-restaurant-network
+    ports:
+      - "8000:8000"  # Kong Proxy (HTTP)
+      - "8443:8443"  # Kong Proxy (HTTPS)
+      - "8001:8001"  # Kong Admin API
+      - "8002:8002"  # Kong Manager
     depends_on:
-      - menu
+      kong-database:
+        condition: service_healthy
+      kong-migration:
+        condition: service_completed_successfully
+      menu-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      billing-service:
+        condition: service_started
+      feedback-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
-networks:
-  app-network:
-    driver: bridge
+  # ============================================
+  # KONGA (Kong Admin Dashboard)
+  # ============================================
+
+  # Konga Database
+  konga-database:
+    image: postgres:15
+    container_name: konga-database
+    environment:
+      POSTGRES_DB: konga
+      POSTGRES_USER: konga
+      POSTGRES_PASSWORD: kongapass
+    networks:
+      - smart-restaurant-network
+    volumes:
+      - konga-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U konga"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Konga Dashboard
+  konga:
+    image: pantsel/konga:latest
+    container_name: konga-dashboard
+    environment:
+      NODE_ENV: production
+      DB_ADAPTER: postgres
+      DB_HOST: konga-database
+      DB_PORT: 5432
+      DB_USER: konga
+      DB_PASSWORD: kongapass
+      DB_DATABASE: konga
+      TOKEN_SECRET: smart-restaurant-secret-token-2024
+      KONGA_HOOK_TIMEOUT: 120000
+    networks:
+      - smart-restaurant-network
+    ports:
+      - "1337:1337"
+    depends_on:
+      konga-database:
+        condition: service_healthy
+      kong:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:1337 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
 
